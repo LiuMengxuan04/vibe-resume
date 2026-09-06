@@ -21,11 +21,14 @@ npm run export:pdf:dense-two-page
 export/vibe-resume-dense-two-page-demo.pdf
 ```
 
-也可以直接使用通用导出脚本：
+也可以直接使用通用导出脚本（跨平台）：
 
 ```bash
-./export-pdf.sh export/my-resume.pdf templates/internship-employment/dense-two-page/index.html
+npm run export -- export/my-resume.pdf templates/internship-employment/dense-two-page/index.html
 ```
+
+Windows 下也可运行 `export-pdf.cmd`，macOS / Linux 下也可运行
+`./export-pdf.sh export/my-resume.pdf templates/internship-employment/dense-two-page/index.html`。
 
 ## 一页 / 两页兼容
 

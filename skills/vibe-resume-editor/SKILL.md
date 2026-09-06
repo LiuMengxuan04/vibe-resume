@@ -64,7 +64,7 @@ For personal-resume mode:
 ### Required export path
 
 - The browser is for HTML preview only. Do not use the browser's Print / Save as PDF output as the deliverable PDF.
-- Always generate the final PDF through the repository's official exporter: `npm run export:pdf`, `npm run export:pdf:dense-two-page`, `npm run export:pdf:research-classic`, or `./export-pdf.sh <output> <input-html>`.
+- Always generate the final PDF through the repository's official exporter: `npm run export:pdf`, `npm run export:pdf:dense-two-page`, `npm run export:pdf:research-classic`, or `npm run export -- <output> <input-html>` (cross-platform; `./export-pdf.sh` on macOS/Linux, `export-pdf.cmd` on Windows).
 - If a user clicks the in-page print button, treat that result as a preview diagnostic only and regenerate the deliverable with the official script.
 
 Use:

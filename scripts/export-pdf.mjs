@@ -22,8 +22,12 @@ function playwrightCacheRoots() {
   const xdgCache = process.env.XDG_CACHE_HOME || path.join(process.env.HOME || "", ".cache");
   const roots = [
     process.env.PLAYWRIGHT_BROWSERS_PATH,
-    path.join(process.env.HOME || "", "Library", "Caches", "ms-playwright"),
-    path.join(xdgCache, "ms-playwright")
+    ...(process.platform === "win32"
+      ? [path.join(process.env.LOCALAPPDATA || "", "ms-playwright")]
+      : [
+          path.join(process.env.HOME || "", "Library", "Caches", "ms-playwright"),
+          path.join(xdgCache, "ms-playwright")
+        ])
   ];
   return [...new Set(roots.filter(Boolean))].filter((root) => existsSync(root));
 }
@@ -45,24 +49,71 @@ function findInPlaywrightCache(prefix, relativePaths) {
   return undefined;
 }
 
-function findPlaywrightHeadlessShell() {
-  const relativePaths =
-    process.platform === "darwin"
-      ? [
-          ["chrome-headless-shell-mac-arm64", "chrome-headless-shell"],
-          ["chrome-headless-shell-mac-x64", "chrome-headless-shell"]
-        ]
-      : [["chrome-linux", "headless_shell"]];
+const playwrightExecutablePaths = {
+  darwin: [
+    ["chrome-headless-shell-mac-arm64", "chrome-headless-shell"],
+    ["chrome-headless-shell-mac-x64", "chrome-headless-shell"]
+  ],
+  win32: [["chrome-headless-shell-win64", "chrome-headless-shell.exe"]],
+  linux: [["chrome-linux", "headless_shell"]]
+};
 
+function findPlaywrightHeadlessShell() {
+  const relativePaths = playwrightExecutablePaths[process.platform] || [];
   return findInPlaywrightCache("chromium_headless_shell-", relativePaths);
 }
 
-function findPlaywrightChromium() {
-  if (process.platform !== "linux") return undefined;
-  return findInPlaywrightCache("chromium-", [
+const playwrightChromiumPaths = {
+  win32: [
+    ["chrome-win64", "chrome.exe"],
+    ["chrome-win", "chrome.exe"]
+  ],
+  linux: [
     ["chrome-linux64", "chrome"],
     ["chrome-linux", "chrome"]
-  ]);
+  ]
+};
+
+function findPlaywrightChromium() {
+  const relativePaths = playwrightChromiumPaths[process.platform] || [];
+  return findInPlaywrightCache("chromium-", relativePaths);
+}
+
+function windowsChromeCandidates() {
+  const programFiles = [
+    process.env["PROGRAMFILES"],
+    process.env["PROGRAMFILES(X86)"],
+    process.env["PROGRAMW6432"]
+  ].filter(Boolean);
+
+  const localAppData = [
+    path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application"),
+    path.join(process.env.LOCALAPPDATA || "", "Chromium", "Application")
+  ].filter(Boolean);
+
+  return [
+    ...programFiles.map((root) => path.join(root, "Google", "Chrome", "Application", "chrome.exe")),
+    ...programFiles.map((root) => path.join(root, "Microsoft", "Edge", "Application", "msedge.exe")),
+    ...programFiles.map((root) => path.join(root, "Chromium", "Application", "chrome.exe")),
+    ...localAppData.map((root) => path.join(root, "chrome.exe"))
+  ];
+}
+
+function macChromeCandidates() {
+  return [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+  ];
+}
+
+function linuxChromeCandidates() {
+  return [
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable"
+  ];
 }
 
 const chromeCandidates = [
@@ -71,20 +122,19 @@ const chromeCandidates = [
   findPlaywrightHeadlessShell(),
   chromium.executablePath(),
   findPlaywrightChromium(),
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium",
-  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-  "/usr/bin/chromium",
-  "/usr/bin/chromium-browser",
-  "/usr/bin/google-chrome",
-  "/usr/bin/google-chrome-stable"
+  ...(process.platform === "win32"
+    ? windowsChromeCandidates()
+    : process.platform === "darwin"
+      ? macChromeCandidates()
+      : linuxChromeCandidates())
 ].filter(Boolean);
 
 const executablePath = chromeCandidates.find((candidate) => existsSync(candidate));
 
 if (!executablePath) {
   throw new Error(
-    "No Chromium executable found. Set CHROME_PATH to a Chrome/Chromium binary and rerun ./export-pdf.sh."
+    "No Chromium executable found. Set CHROME_PATH to a Chrome/Chromium binary and rerun " +
+      "`npm run export:pdf` (or `export-pdf.cmd` on Windows, `./export-pdf.sh` on macOS/Linux)."
   );
 }
 

@@ -54,7 +54,7 @@ VibeResume 的思路是：**把网页作为简历源文件，把 AI 当作编辑
 npm install
 ```
 
-本地预览：
+本地预览（内置 Node 静态服务器，Windows / macOS / Linux 通用，无需 Python）：
 
 ```bash
 npm run preview
@@ -111,13 +111,23 @@ export/vibe-resume-research-classic-demo.pdf
 也可以指定输出路径：
 
 ```bash
+# Windows
+npm run export -- export/my-resume.pdf
+# macOS / Linux（两种方式等价）
+npm run export -- export/my-resume.pdf
 ./export-pdf.sh export/my-resume.pdf
 ```
 
 通用脚本也可以指定模板 HTML：
 
 ```bash
-./export-pdf.sh export/my-two-page-resume.pdf templates/internship-employment/dense-two-page/index.html
+npm run export -- export/my-two-page-resume.pdf templates/internship-employment/dense-two-page/index.html
+```
+
+Windows 下也可以直接运行 `export-pdf.cmd`（与 `export-pdf.sh` 等价）：
+
+```powershell
+export-pdf.cmd export/my-resume.pdf
 ```
 
 ## 模板选择
@@ -156,8 +166,17 @@ export/vibe-resume-research-classic-demo.pdf
 如果脚本找不到浏览器，可以手动指定 Chrome / Chromium：
 
 ```bash
+# macOS / Linux
 CHROME_PATH=/path/to/chrome ./export-pdf.sh
+
+# Windows (PowerShell)
+$env:CHROME_PATH = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+npm run export:pdf
 ```
+
+Windows 上无需手动指定：导出器会自动检测 `%LOCALAPPDATA%\ms-playwright`
+下的 Playwright Chromium / headless shell，以及标准安装位置的 Chrome、
+Edge 和 Chromium（`Program Files`、`Program Files (x86)`、`LOCALAPPDATA`）。
 
 优先使用与当前 `playwright-core` 版本匹配的 Playwright Chromium。系统 Chrome
 可能比项目依赖更新得更快；版本不兼容时，Chromium 偶尔会生成只有背景、边框和图片，
@@ -173,13 +192,14 @@ unset CHROME_PATH
 ```
 
 也可以把 `CHROME_PATH` 指向与项目 Playwright 版本匹配的 Chromium 可执行文件。文件名
-建议避免 `*` 等 shell 特殊字符，即使路径已经放在引号中。
+建议避免 `*` 等 shell 特殊字符，即使路径已经放在引号中（PowerShell 中同理，如
+`$env:CHROME_PATH = "C:\Program Files\Google\Chrome\Application\chrome.exe"`）。
 
 在 Codex、CI、容器或其他受限环境中，Chromium 也可能因沙箱策略无法启动，
 并出现 `Permission denied`、`MachPortRendezvousServer` 或浏览器启动后立即关闭。
 导出器会把这些底层日志转换成可操作的提示。此时请在本机终端执行
-`./export-pdf.sh`，或为执行环境开放启动无头浏览器所需的权限；设置
-`CHROME_PATH` 只能选择浏览器，不能绕过系统沙箱。
+`npm run export:pdf`（或 `./export-pdf.sh` / `export-pdf.cmd`），或为执行环境
+开放启动无头浏览器所需的权限；设置 `CHROME_PATH` 只能选择浏览器，不能绕过系统沙箱。
 
 ## 像 Vibe Coding 一样编辑简历
 
@@ -303,6 +323,7 @@ VibeResume
 │       └── SKILL.md
 ├── scripts/
 │   ├── export-pdf.mjs
+│   ├── preview.mjs
 │   └── sync-lobe-icons.mjs
 ├── templates/
 │   ├── internship-employment/
@@ -311,6 +332,7 @@ VibeResume
 │   ├── research-application/
 │   │   └── research-classic/
 │   └── README.md
+├── export-pdf.cmd
 ├── export-pdf.sh
 ├── index.html
 ├── styles.css
@@ -327,7 +349,7 @@ VibeResume 的导出脚本会打开所选模板 HTML，强制使用 `screen` 布
 因此请严格区分：
 
 - 浏览器：只用于查看和调试网页效果。
-- `npm run export:pdf` / `npm run export:pdf:internship-standard` / `npm run export:pdf:dense-two-page` / `npm run export:pdf:research-classic` / `./export-pdf.sh`：用于生成最终交付 PDF。
+- `npm run export:pdf` / `npm run export:pdf:internship-standard` / `npm run export:pdf:dense-two-page` / `npm run export:pdf:research-classic` / `npm run export -- <output> <html>`（macOS/Linux 也可用 `./export-pdf.sh`，Windows 也可用 `export-pdf.cmd`）：用于生成最终交付 PDF。
 
 无论是一页还是两页模板，正式 PDF 都必须走项目官方导出脚本。
 
@@ -373,6 +395,8 @@ Default PDF output:
 ```text
 export/vibe-resume-demo.pdf
 ```
+
+All of the commands above are cross-platform (Windows / macOS / Linux); no Python is required for `npm run preview`. For ad-hoc output paths use `npm run export -- <output.pdf> <input.html>`, or `export-pdf.cmd` on Windows / `./export-pdf.sh` on macOS and Linux.
 
 ### AI Workflow
 

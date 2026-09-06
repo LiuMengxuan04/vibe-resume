@@ -25,9 +25,10 @@
     "ai-resume"
   ],
   "scripts": {
-    "preview": "python3 -m http.server 4173",
+    "preview": "node scripts/preview.mjs",
     "test": "node --test",
     "sync:logos": "node scripts/sync-lobe-icons.mjs",
+    "export": "node scripts/export-pdf.mjs",
     "export:pdf": "node scripts/export-pdf.mjs export/vibe-resume-demo.pdf templates/internship-employment/standard-one-page/index.html",
     "export:pdf:internship-standard": "node scripts/export-pdf.mjs export/vibe-resume-demo.pdf templates/internship-employment/standard-one-page/index.html",
     "export:pdf:dense-two-page": "node scripts/export-pdf.mjs export/vibe-resume-dense-two-page-demo.pdf templates/internship-employment/dense-two-page/index.html",

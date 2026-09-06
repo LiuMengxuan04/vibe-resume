@@ -9,7 +9,8 @@ export function createBrowserLaunchError(error, executablePath) {
     return new Error(
       [
         `Chromium could not start in the current restricted environment: ${executablePath}.`,
-        "Run ./export-pdf.sh in a local terminal, or allow the environment to launch a headless browser.",
+        "Run `npm run export:pdf` in a local terminal (or export-pdf.cmd on Windows,",
+        "./export-pdf.sh on macOS/Linux), or allow the environment to launch a headless browser.",
         "Setting CHROME_PATH selects a browser, but does not bypass sandbox permissions."
       ].join(" ")
     );
