@@ -2,8 +2,11 @@
 import http from "node:http";
 import path from "node:path";
 import { readFile, writeFile, mkdir, rename, unlink, realpath, open } from "node:fs/promises";
+import { readFileSync, unlinkSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
+import lockfile from "proper-lockfile";
 import { attr, digest, readDocument, renderDocument, annotationsOf, pageFor, validateEdit } from "./document.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -157,10 +160,32 @@ export async function createPreview({ root = REPO_ROOT, input = DEFAULT_INPUT, p
   root = await realpath(root);
   input = path.resolve(root, input);
   if (!inside(root, input) || path.extname(input) !== ".html") throw new Error("Choose an HTML file inside the project");
+  input = await realpath(input).catch((error) => { if (error.code === "ENOENT") return input; throw error; });
+  if (!inside(root, input)) throw new Error("Resume source must stay inside the project");
   const runtime = path.join(root, "live_preview", digest(input).slice(0, 12));
   await mkdir(runtime, { recursive: true });
+  const lock = path.join(runtime, "lock.json");
+  // Acquire the process-wide lease before restore() can rewrite a shared draft.
+  const release = lockfile.lockSync(lock, { realpath: false });
+  const instanceId = randomUUID();
+  let released = false;
+  const releaseInstance = () => {
+    if (released) return;
+    released = true;
+    try {
+      if (JSON.parse(readFileSync(lock, "utf8")).instance_id === instanceId) unlinkSync(lock);
+    } catch (error) { if (error.code !== "ENOENT") console.warn(`Preview discovery cleanup failed: ${error.message}`); }
+    release();
+  };
   const state = new PreviewState(root, input, runtime);
-  await state.restore();
+  try {
+    await state.restore();
+    return await listenPreview(state, { port, strictPort, timeout, lock, instanceId, releaseInstance });
+  } catch (error) { releaseInstance(); throw error; }
+}
+
+async function listenPreview(state, { port, strictPort, timeout, lock, instanceId, releaseInstance }) {
+  const { root, input, runtime } = state;
   let mutations = Promise.resolve();
   let lastActivity = Date.now();
   let url;
@@ -234,38 +259,47 @@ export async function createPreview({ root = REPO_ROOT, input = DEFAULT_INPUT, p
     catch (error) { if (error.code !== "EADDRINUSE" || strictPort || port === 0) throw error; port++; }
   }
   url = `http://127.0.0.1:${server.address().port}`;
-  const lock = path.join(runtime, "lock.json");
-  await atomicWrite(lock, JSON.stringify({ url, pid: process.pid, input }, null, 2));
-  const watchdog = timeout ? setInterval(() => { if (Date.now() - lastActivity > timeout * 1000) server.close(); }, 1000) : null;
+  let watchdog;
+  server.on("close", () => { clearInterval(watchdog); releaseInstance(); });
+  try { await atomicWrite(lock, JSON.stringify({ url, pid: process.pid, input, instance_id: instanceId }, null, 2)); }
+  catch (error) { await new Promise((resolve) => server.close(resolve)); throw error; }
+  watchdog = timeout ? setInterval(() => { if (Date.now() - lastActivity > timeout * 1000) server.close(); }, 1000) : null;
   watchdog?.unref();
-  server.on("close", () => { clearInterval(watchdog); unlink(lock).catch(() => {}); });
   return { server, state, url, runtime };
+}
+
+async function runningPreview(runtime, input) {
+  const lock = await readFile(path.join(runtime, "lock.json"), "utf8").then(JSON.parse).catch(() => null);
+  if (lock?.input !== input || !/^http:\/\/127\.0\.0\.1:\d+$/.test(lock.url)) return null;
+  try {
+    const health = await fetch(`${lock.url}/api/health`, { signal: AbortSignal.timeout(1500) }).then((res) => res.json());
+    if (health.service === "vibe_resume_preview" && health.input === input && health.pid === lock.pid) return lock;
+  } catch {}
+  return null;
 }
 
 async function cli() {
   const args = process.argv.slice(2);
   const value = (flag, fallback) => args.includes(flag) ? args[args.indexOf(flag) + 1] : fallback;
-  const input = path.resolve(REPO_ROOT, args.find((arg, index) => !arg.startsWith("--") && !["--port", "--timeout"].includes(args[index - 1])) || DEFAULT_INPUT);
+  let input = path.resolve(REPO_ROOT, args.find((arg, index) => !arg.startsWith("--") && !["--port", "--timeout"].includes(args[index - 1])) || DEFAULT_INPUT);
+  input = await realpath(input).catch((error) => { if (error.code === "ENOENT") return input; throw error; });
   if (!inside(REPO_ROOT, input)) throw new Error("HTML must be inside VibeResume");
   const runtime = path.join(REPO_ROOT, "live_preview", digest(input).slice(0, 12));
-  const old = await readFile(path.join(runtime, "lock.json"), "utf8").then(JSON.parse).catch(() => null);
-  let running = false;
-  if (old?.url && /^http:\/\/127\.0\.0\.1:\d+$/.test(old.url)) {
-    try { const health = await fetch(`${old.url}/api/health`, { signal: AbortSignal.timeout(1500) }).then((res) => res.json()); running = health.service === "vibe_resume_preview" && health.input === input; } catch {}
-  }
+  const running = await runningPreview(runtime, input);
   if (args.includes("--shutdown")) {
-    if (running) await fetch(`${old.url}/api/shutdown`, { method: "POST" });
+    if (running) await fetch(`${running.url}/api/shutdown`, { method: "POST" });
     console.log(running ? "Preview stopped." : "No preview running."); return;
   }
-  if (running) { console.log(`Preview already running: ${old.url}`); return; }
+  if (running) { console.log(`Preview already running: ${running.url}`); return; }
   if (args.includes("--daemon")) {
     await mkdir(runtime, { recursive: true });
     const log = await open(path.join(runtime, "server.log"), "a");
     const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args.filter((arg) => arg !== "--daemon"), "--no-browser"], { detached: true, windowsHide: true, stdio: ["ignore", log.fd, log.fd], cwd: REPO_ROOT });
     child.unref(); await log.close();
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const ready = await readFile(path.join(runtime, "lock.json"), "utf8").then(JSON.parse).catch(() => null);
-      if (ready?.pid === child.pid) { console.log(`Live preview: ${ready.url}`); if (!args.includes("--no-browser")) openBrowser(ready.url); return; }
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const ready = await runningPreview(runtime, input);
+      if (ready) { console.log(`Live preview: ${ready.url}`); if (!args.includes("--no-browser")) openBrowser(ready.url); return; }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw new Error(`Preview did not start; see ${path.join(runtime, "server.log")}`);
@@ -273,9 +307,21 @@ async function cli() {
   const port = Number(value("--port", 4173));
   const timeout = Number(value("--timeout", 7200));
   if (!Number.isInteger(port) || port < 0 || port > 65535 || !Number.isFinite(timeout) || timeout < 0) throw new Error("Invalid port or timeout");
-  const preview = await createPreview({ input, port, strictPort: args.includes("--port"), timeout });
-  console.log(`Live preview: ${preview.url}\nHTML source: ${input}\nApply changes saves HTML; ask AI to apply annotations and export PDF.`);
-  if (!args.includes("--no-browser")) openBrowser(preview.url);
+  const deadline = Date.now() + 20000;
+  while (true) {
+    try {
+      const preview = await createPreview({ input, port, strictPort: args.includes("--port"), timeout });
+      console.log(`Live preview: ${preview.url}\nHTML source: ${input}\nApply changes saves HTML; ask AI to apply annotations and export PDF.`);
+      if (!args.includes("--no-browser")) openBrowser(preview.url);
+      return;
+    } catch (error) {
+      if (error.code !== "ELOCKED") throw error;
+      const running = await runningPreview(runtime, input);
+      if (running) { console.log(`Preview already running: ${running.url}`); return; }
+      if (Date.now() >= deadline) throw new Error("Another preview is still starting; retry shortly.");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 }
 
 function openBrowser(url) {
