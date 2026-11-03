@@ -68,6 +68,7 @@
             modal_matrix_transform_note: "\n\nNote: at least one staged geometry edit uses a transform matrix. Re-export with the current PDF exporter so the matrix is applied.",
             slide_error_tooltip: "Failed to parse this slide: ",
             reload_banner: "This slide was updated on disk. Click to reload.",
+            conflict_banner: "The source changed after edits were staged. Exit preview and restart it; the conflicting draft will be archived in live_preview for recovery.",
             modal_confirm_submit: "Apply staged direct edits and AI annotations to disk?\n\nThe preview service will keep running. Click Exit preview when you want to stop it.",
             modal_success_submit: "Changes saved to HTML.\n\nThe preview service is still running.",
             modal_success_direct_only: "Changes saved to HTML.\n\nDirect edits are now in the HTML source. Return to the chat and ask to re-export when you want a refreshed PDF. The preview service is still running.",
@@ -147,6 +148,7 @@
             modal_matrix_transform_note: "\n\n注意：未適用の位置・サイズの編集のうち、少なくとも1件が transform matrix を使用しています。matrix が反映されるよう、現行のPDFエクスポーターで再エクスポートしてください。",
             slide_error_tooltip: "このページの解析に失敗しました：",
             reload_banner: "このページはディスク上で更新されました。クリックすると再読み込みします。",
+            conflict_banner: "編集の一時保存後にソースが変更されました。プレビューを終了して再起動してください。競合した下書きは復元用に live_preview に保存されます。",
             modal_confirm_submit: "未適用の直接編集とAI向けコメントをディスクに書き込みますか？\n\nプレビューサーバーは動作を続けます。停止するには「プレビューを終了」をクリックしてください。",
             modal_success_submit: "変更を HTML に保存しました。\n\nプレビューサーバーは引き続き動作しています。",
             modal_success_direct_only: "変更を HTML に保存しました。\n\n直接編集はHTMLソースに反映済みです。PDFを更新したいときは、チャットに戻って再エクスポートを依頼してください。プレビューサーバーは引き続き動作しています。",
@@ -226,6 +228,7 @@
             modal_matrix_transform_note: "\n\n提示：至少有一条暂存的位置/大小修改使用了 transform matrix。请用当前 PDF 导出器重新导出，确保 matrix 被应用。",
             slide_error_tooltip: "该简历页解析失败：",
             reload_banner: "当前页已在磁盘上更新，点此重新加载。",
+            conflict_banner: "暂存修改后源文件发生变化。请退出预览并重新启动；冲突草稿会归档到 live_preview，以便对照恢复。",
             modal_confirm_submit: "确认将暂存的直接修改和 AI 标注写入磁盘？\n\n预览服务会继续运行。需要关闭时请点击“退出预览”。",
             modal_success_submit: "修改已保存到 HTML。\n\n预览服务仍在运行。",
             modal_success_direct_only: "修改已保存到 HTML。\n\n直接修改已经写入 HTML 源文件；需要刷新 PDF 时，请回到对话窗口要求重新导出。预览服务仍在运行。",
@@ -305,6 +308,7 @@
             modal_matrix_transform_note: "\n\n提示：至少有一筆暫存幾何修改使用了 transform matrix。請使用目前版本的 PDF 匯出器重新匯出，以套用 matrix。",
             slide_error_tooltip: "該投影片解析失敗：",
             reload_banner: "這張投影片已在磁碟上更新，點此重新載入。",
+            conflict_banner: "暫存修改後來源檔案發生變化。請結束預覽並重新啟動；衝突草稿會封存至 live_preview，以便對照還原。",
             modal_confirm_submit: "確認將暫存的直接修改和 AI 標註寫入磁碟？\n\n預覽服務會繼續執行。需要關閉時請點選結束預覽。",
             modal_success_submit: "修改已儲存到 HTML。\n\n預覽服務仍在執行。",
             modal_success_direct_only: "修改已儲存到 HTML。\n\n直接修改已經寫入 HTML 原始檔；需要更新 PDF 時，請回到對話視窗要求重新匯出。預覽服務仍在執行。",
@@ -437,6 +441,7 @@
     var slideNames        = [];     // ordered slide filenames for navigation
     var selectedElementIds = new Set(); // id attrs of selected HTML elements
     var slideAnnotations  = {};     // {element_id: annotation_text} for current slide
+    var annotationsBySlide = {};   // annotation state for each slide
     var liveMode          = false;
     var slidePollTimer    = null;
     var pendingModalAction = "submit";
@@ -726,6 +731,7 @@
 
     // HTML canvas adapter; the surrounding shell is retained from VibeResume.
     var sourceDigest = null;
+    var slideRequest = 0;
     var canvas = new ResumeCanvas(svgContent, {
         select: selectElement, clear: clearSelection, key: handleKey,
         elements: selectedTopLevel,
@@ -741,25 +747,38 @@
         return elements.filter(function (element) { return !elements.some(function (parent) { return parent !== element && parent.contains(element); }); });
     }
     async function selectSlide(name, item) {
-        currentSlide = name;
-        waitingForSlide = null;
-        rememberSlideInLocation(name);
-        clearSelection();
-        slideAnnotations = {};
-        hideReloadBanner();
-        document.querySelectorAll('.slide-item').forEach(function (entry) { entry.classList.toggle('active', entry.dataset.name === name); });
+        var request = ++slideRequest;
         try {
             var data = await fetch('/api/slide/' + encodeURIComponent(name)).then(jsonOrThrow);
-            if (name !== currentSlide) return;
-            sourceDigest = data.base_digest;
+            if (request !== slideRequest) return;
             svgPlaceholder.style.display = 'none';
             svgContent.style.display = 'block';
-            if (!await canvas.load(data.content, data.base_url, data.page_index) || name !== currentSlide) return;
+            if (!await canvas.load(data.content, data.base_url, data.page_index) || request !== slideRequest) return;
+            currentSlide = name;
+            waitingForSlide = null;
+            rememberSlideInLocation(name);
+            clearSelection();
+            sourceDigest = data.base_digest;
+            slideAnnotations = annotationsBySlide[name] = {};
+            hideReloadBanner();
+            document.querySelectorAll('.slide-item').forEach(function (entry) { entry.classList.toggle('active', entry.dataset.name === name); });
             slideMtimes[name] = data.mtime;
             (data.annotations || []).forEach(function (annotation) { slideAnnotations[annotation.element_id] = annotation.annotation; });
             editStackCount[name] = data.undo_depth || 0;
             refreshAnnotationVisuals(); updateAnnotationList(); updateUndoButton(); updatePendingStatus(); updateNavLabel();
-        } catch (error) { showError(error.message); waitForSlideRewrite(name); }
+        } catch (error) {
+            if (request !== slideRequest) return;
+            if (error.status === 409) { showReloadBanner(currentSlide || name, true); return; }
+            currentSlide = name;
+            waitingForSlide = null;
+            rememberSlideInLocation(name);
+            clearSelection();
+            slideAnnotations = annotationsBySlide[name] = {};
+            hideReloadBanner();
+            document.querySelectorAll('.slide-item').forEach(function (entry) { entry.classList.toggle('active', entry.dataset.name === name); });
+            updateAnnotationList(); updateUndoButton(); updateNavLabel();
+            showError(error.message); waitForSlideRewrite(name);
+        }
     }
     function handleKey(event) {
         var target = event.target;
@@ -884,9 +903,10 @@
         var text = annotationText.value.trim();
         if (!text) return;
 
+        var slide = currentSlide;
         var ids = Array.from(selectedElementIds);
         var promises = ids.map(function (eid) {
-            return fetch("/api/slide/" + encodeURIComponent(currentSlide) + "/annotate", {
+            return fetch("/api/slide/" + encodeURIComponent(slide) + "/annotate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ element_id: eid, annotation: text, base_digest: sourceDigest })
@@ -896,12 +916,14 @@
         Promise.all(promises)
             .then(function () {
                 ids.forEach(function (eid) {
-                    slideAnnotations[eid] = text;
+                    annotationsBySlide[slide][eid] = text;
                 });
-                markAnnotationChanged(currentSlide);
-                refreshAnnotationVisuals();
-                updateAnnotationList();
-                annotationText.value = "";
+                markAnnotationChanged(slide);
+                if (slide === currentSlide) {
+                    refreshAnnotationVisuals();
+                    updateAnnotationList();
+                    annotationText.value = "";
+                }
                 loadSlides();
             })
             .catch(function (err) {
@@ -916,15 +938,18 @@
     function removeAnnotation(elementId) {
         if (!currentSlide) return;
 
-        fetch("/api/slide/" + encodeURIComponent(currentSlide) + "/annotate/" + encodeURIComponent(elementId), {
+        var slide = currentSlide;
+        fetch("/api/slide/" + encodeURIComponent(slide) + "/annotate/" + encodeURIComponent(elementId), {
             method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base_digest: sourceDigest })
         })
             .then(jsonOrThrow)
             .then(function () {
-                delete slideAnnotations[elementId];
-                markAnnotationChanged(currentSlide);
-                refreshAnnotationVisuals();
-                updateAnnotationList();
+                delete annotationsBySlide[slide][elementId];
+                markAnnotationChanged(slide);
+                if (slide === currentSlide) {
+                    refreshAnnotationVisuals();
+                    updateAnnotationList();
+                }
                 loadSlides();
             })
             .catch(function (err) {
@@ -1135,15 +1160,16 @@
         setTimeout(function () { banner.remove(); }, 6000);
     }
 
-    function showReloadBanner(name) {
+    function showReloadBanner(name, conflict) {
+        if (!conflict && reloadBannerEl && reloadBannerEl.dataset.conflict === "true") return;
         // Singleton: replace any prior banner so we never stack reloads.
         hideReloadBanner();
         var banner = document.createElement("div");
         banner.id = "reload-banner";
-        banner.style.cssText = "position:fixed;top:0;left:0;right:0;padding:10px 16px;background:#2563eb;color:#fff;font-size:13px;text-align:center;z-index:1000;cursor:pointer;";
-        banner.textContent = t("reload_banner");
+        banner.dataset.conflict = conflict ? "true" : "false";
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;padding:10px 16px;background:" + (conflict ? "#dc2626" : "#2563eb") + ";color:#fff;font-size:13px;text-align:center;z-index:1000;cursor:pointer;";
+        banner.textContent = t(conflict ? "conflict_banner" : "reload_banner");
         banner.onclick = function () {
-            hideReloadBanner();
             // Re-fetch via selectSlide so all post-load logic (annotation merge,
             // warnings, mtime update) runs the same way as a manual click.
             var item = slideListEl.querySelector('.slide-item[data-name="' + cssAttr(name) + '"]');
@@ -1173,7 +1199,9 @@
     function jsonOrThrow(res) {
         return res.json().then(function (data) {
             if (!res.ok || data.error) {
-                throw new Error(data.error || ("Request failed with status " + res.status));
+                var error = new Error(data.error || ("Request failed with status " + res.status));
+                error.status = res.status;
+                throw error;
             }
             if (data.draft_saved === false) showWarning(t("warn_draft_unsaved"));
             return data;

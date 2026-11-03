@@ -6,6 +6,7 @@ import { readFileSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import lockfile from "proper-lockfile";
 import { attr, digest, readDocument, renderDocument, annotationsOf, pageFor, validateEdit } from "./document.mjs";
 
@@ -152,7 +153,10 @@ export class PreviewState {
 
 async function bodyOf(req) {
   let body = "";
-  for await (const chunk of req) { body += chunk; if (body.length > 100000) throw new Error("Request too large"); }
+  const decoder = new StringDecoder("utf8");
+  for await (const chunk of req) { body += decoder.write(chunk); if (body.length > 100000) throw new Error("Request too large"); }
+  body += decoder.end();
+  if (body.length > 100000) throw new Error("Request too large");
   return body ? JSON.parse(body) : {};
 }
 

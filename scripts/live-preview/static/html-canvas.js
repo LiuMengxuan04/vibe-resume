@@ -147,7 +147,7 @@
                 const button = this.document().createElement("button");
                 button.style.cssText = "display:block;width:100%;padding:8px;background:transparent;color:inherit;border:0;text-align:left;cursor:pointer";
                 button.textContent = `<${element.tagName.toLowerCase()}> ${element.textContent.trim().slice(0, 24) || element.id}`;
-                button.onclick = () => { this.callbacks.select(element, false); menu.remove(); };
+                button.onclick = (event) => { event.stopPropagation(); this.callbacks.select(element, false); menu.remove(); };
                 menu.appendChild(button);
             }
             this.document().body.appendChild(menu);
