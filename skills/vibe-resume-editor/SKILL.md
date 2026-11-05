@@ -1,6 +1,6 @@
 ---
 name: vibe-resume-editor
-description: Use when editing VibeResume templates, converting resume facts and target roles into polished one-page or two-page HTML resumes, and validating the generated PDF.
+description: Use when editing VibeResume templates, turning resume facts and a target role into a one-page or two-page HTML resume, and validating the generated PDF.
 ---
 
 # VibeResume Editor
@@ -14,6 +14,15 @@ Template sources:
 - Standard one-page template: `templates/internship-employment/standard-one-page/index.html` + `styles.css`
 - Dense one/two-page technical template: `templates/internship-employment/dense-two-page/index.html` + `templates/internship-employment/dense-two-page/styles.css`
 - Research application template: `templates/research-application/research-classic/index.html` + `templates/research-application/research-classic/styles.css`
+
+## Generation Mode
+
+Open the live preview before editing. If the user asks for quick generation, or asks you not to open the preview, skip the launch and edit the files directly.
+
+- **Default**: at step 3, start or reuse the preview and send the URL.
+- **Quick**: skip that launch.
+
+If the user later asks to see the page or select something on it, start the preview for the same HTML.
 
 ## Core Rules
 
@@ -52,7 +61,7 @@ For personal-resume mode:
 1. Inspect `README.md`, `scripts/export-pdf.mjs`, and the HTML/CSS pair for the selected template.
 2. Identify whether the task is demo/template maintenance or a real personal resume.
 3. Select `templates/internship-employment/standard-one-page/`, `templates/internship-employment/dense-two-page/`, or `templates/research-application/research-classic/` using the rules above.
-   Before authoring, start `node scripts/live-preview/server.mjs <selected-html> --daemon` and report the actual URL. Reuse a running preview for that HTML. The editor watches the selected HTML and its linked CSS; do not open a different template from the one being edited or exported.
+   In Default mode, before authoring, start `node scripts/live-preview/server.mjs <selected-html> --daemon` and report the actual URL. Reuse a running preview for that HTML. In Quick mode, skip this launch. The editor watches the selected HTML and its linked CSS; do not open a different template from the one being edited or exported.
 4. Update resume content in the selected HTML file.
 5. Adjust spacing, width, typography, density, and page balance in the selected CSS file only when needed.
 6. For company logos, ask the user to manually download the intended SVG from `https://www.iconfont.cn/` (or an official brand library) and attach it; then copy it into `assets/logos/`. For AI/model/provider marks, follow `https://lobehub.com/icons/skill.md`: inspect `toc`, select a supported variant, use `getLobeIconCDN`, and store it locally. Do not guess slugs or substitute a product logo for a company logo without explicit user approval.
@@ -99,8 +108,10 @@ the preview only when requested; `node scripts/live-preview/server.mjs
 ### Required export path
 
 - The browser is for HTML preview only. Do not use the browser's Print / Save as PDF output as the deliverable PDF.
-- Always generate the final PDF through the repository's official exporter: `npm run export:pdf`, `npm run export:pdf:dense-two-page`, `npm run export:pdf:research-classic`, or `./export-pdf.sh <output> <input-html>`.
+- Always generate the final PDF through the repository's official exporter: `node scripts/export-pdf.mjs <output-pdf> <selected-html>`, the template-specific npm scripts, or `./export-pdf.sh <output> <input-html>`.
 - If a user clicks the in-page print button, treat that result as a preview diagnostic only and regenerate the deliverable with the official script.
+
+For a custom output path, pass the PDF path and the selected HTML to `node scripts/export-pdf.mjs` or `./export-pdf.sh`. The npm scripts export the default files in `package.json`.
 
 Use:
 
@@ -130,9 +141,9 @@ pdftotext export/vibe-resume-demo.pdf -
 
 Validation expectations:
 
-- `pdfinfo` reports the requested page count: one page for the root and research templates, one or two pages for the dense template.
+- `pdfinfo` reports the requested page count: one page for the standard template, one or two pages for the dense template, and one continuous page for the research template. If the user names a paper size, check the page dimensions too.
 - The PDF text includes profile, education, internships or research work, projects or publications, and skills.
-- No important section is clipped or missing.
+- Open the generated PDF and check for clipped or missing content, overlaps, unreadable text, and wrong images.
 - For two pages, both pages have intentional section boundaries and balanced bottom whitespace; a project or role must not be accidentally split across pages.
 - The generated PDF visually matches the browser page closely because the exporter uses Chromium screen layout.
 

@@ -38,6 +38,7 @@ VibeResume 的思路是：**把网页作为简历源文件，把 AI 当作编辑
 - **像 vibe coding 一样编辑简历**：直接告诉 AI 目标岗位、修改方向和版式要求，让它修改 `index.html` 与 `styles.css`。
 - **网页即源文件**：简历内容、布局、图标、链接都在静态 HTML/CSS 中维护，天然适合 Git 版本管理。
 - **实时预览与可视化修改**：沿用 PPT Master 的三栏编辑、暂存、撤销和标注交接流程，适配 HTML 简历。
+- **快速生成**：说“快速生成”时，AI 按模板改完并导出 PDF，预览留到你要看页面时再开。
 - **一键导出 PDF**：使用 Chromium 渲染网页的 `screen` 布局；一页模板动态测量 `.page` 高度，双页模板识别 `.resume-page` 并按页导出。
 - **分类模板**：`templates/internship-employment/` 提供两种实习就业模板，`templates/research-application/` 提供科研申请模板。
 - **避免打印错位**：不依赖手动浏览器打印，不触发不可控的纸张边距、分页、缩放和 `@media print` 差异。
@@ -125,6 +126,18 @@ export/vibe-resume-research-classic-demo.pdf
 ./export-pdf.sh export/my-two-page-resume.pdf templates/internship-employment/dense-two-page/index.html
 ```
 
+### 快速生成
+
+平常会打开实时预览。想先拿到 PDF，就说“快速生成”：AI 会选模板、改 HTML/CSS，再导出并检查 PDF。
+
+```text
+用 vibe-resume-editor 快速生成一页中文后端实习简历。
+输出到 export/backend-resume.pdf。
+[经历、目标 JD，或原简历路径]
+```
+
+PDF 由无头 Chromium 导出。之后要改页面，打开同一份 HTML 的实时预览；已经保存的标注还在，回到聊天说“应用标注”。
+
 ## 模板选择
 
 ### 实习就业
@@ -145,7 +158,7 @@ export/vibe-resume-research-classic-demo.pdf
 - 页数：默认示例为两页；删除第二个 `.resume-page` 后，同一导出器会自动生成一页 PDF。
 - [预览](templates/internship-employment/dense-two-page/preview.png) · 导出：`npm run export:pdf:dense-two-page`
 
-当用户明确要求两页简历时，配套 Skill 会默认选择这个模板；未指定页数时仍沿用根目录的一页模板。
+当用户明确要求两页简历时，配套 Skill 会默认选择这个模板；没指定页数时用标准一页模板。
 
 ### 科研申请
 
@@ -387,6 +400,7 @@ VibeResume is a vibe-coding friendly web-to-PDF resume template repository. It i
 
 - **AI-editable resume**: describe what you want, and let an AI agent update the HTML/CSS resume directly.
 - **Web-first source**: content, layout, links, icons, and styling are all version-controlled as static files.
+- **Quick generation**: say "quick generation" and the AI edits the template and exports a PDF. The live preview opens when you ask to see the page.
 - **Stable PDF export**: Chromium renders the screen layout and exports either a measured continuous page or explicit `.resume-page` pages.
 - **Template categories**: `templates/internship-employment/` contains standard one-page and dense technical layouts; `templates/research-application/` contains the research application layout.
 - **Print mismatch avoidance**: no manual browser print workflow, no unexpected print-media pagination.
@@ -418,6 +432,18 @@ Default PDF output:
 ```text
 export/vibe-resume-demo.pdf
 ```
+
+### Quick Generation
+
+The live preview opens during editing. Say "quick generation" when you want the PDF first: the AI picks a template, edits the HTML/CSS, exports the PDF, and checks it.
+
+```text
+Use vibe-resume-editor to quickly generate a one-page backend internship resume.
+Export the PDF to export/backend-resume.pdf.
+[Experience notes, target JD, or source file paths]
+```
+
+The PDF is exported with headless Chromium. To revise the page later, open the live preview on the same HTML. Saved annotations stay on the page; go back to chat and ask the AI to apply them.
 
 ### AI Workflow
 
