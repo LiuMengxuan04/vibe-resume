@@ -8,17 +8,20 @@ import { pageFor, readDocument } from '../scripts/live-preview/document.mjs';
 import { createPreview } from '../scripts/live-preview/server.mjs';
 import { scanAnnotations } from '../scripts/check-annotations.mjs';
 
-const ARTIFACTS = path.resolve('tmp/pr5-review-fixes-20261103');
+const ARTIFACTS = path.resolve(process.env.PR5_ARTIFACTS || 'tmp/pr5-review-fixes-20261103');
 const STANDARD = 'templates/internship-employment/standard-one-page/index.html';
 const DENSE = 'templates/internship-employment/dense-two-page/index.html';
 const phase = process.env.PR5_PHASE || 'run';
+let fixturePort = 15000;
 
 async function fixture(input) {
   await mkdir(ARTIFACTS, { recursive: true });
   const root = await mkdtemp(path.join(ARTIFACTS, 'fixture-'));
   await cp(path.dirname(input), path.join(root, path.dirname(input)), { recursive: true });
   await cp('assets', path.join(root, 'assets'), { recursive: true });
-  const preview = await createPreview({ root, input, port: 0, timeout: 0 });
+  // Some environments assign browser-restricted ports when listening on port 0.
+  const preview = await createPreview({ root, input, port: fixturePort, timeout: 0 });
+  fixturePort = Number(new URL(preview.url).port) + 1;
   return { root, input: path.join(root, input), preview };
 }
 
@@ -91,6 +94,27 @@ async function delayResponse(page, urlPattern, method) {
   return { seen, release, done };
 }
 
+async function holdRequest(page, urlPattern, method, fail) {
+  let arrived, release, finished;
+  const seen = new Promise((resolve) => { arrived = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  const done = new Promise((resolve) => { finished = resolve; });
+  let held = false;
+  await page.route(urlPattern, async (route) => {
+    if (held || route.request().method() !== method) return route.continue();
+    held = true;
+    arrived();
+    await gate;
+    if (fail) {
+      const body = route.request().postDataJSON();
+      body.base_digest = 'invalid-digest';
+      await route.continue({ postData: JSON.stringify(body) });
+    } else await route.continue();
+    finished();
+  });
+  return { seen, release, done };
+}
+
 for (const [label, input] of [['standard', STANDARD], ['dense', DENSE]]) {
   test(`right-click overlap picker keeps the chosen parent selected (${label})`, { skip: !process.env.CHROME_PATH }, async () => {
     await browserTest(`overlap-${label}`, input, async ({ page }) => {
@@ -136,6 +160,96 @@ test('delayed annotation addition remains on its original page and saves there',
     } finally { delayed.release(); }
   });
 });
+
+for (const change of ['selection', 'text']) {
+  test(`delayed annotation response preserves newer same-page ${change}`, { skip: !process.env.CHROME_PATH }, async () => {
+    await browserTest(`annotation-draft-${change}`, STANDARD, async ({ page, input }) => {
+      const frame = await waitPage(page, 1);
+      await frame.locator('h1').first().click();
+      await page.locator('#annotation-text').fill('已提交的标注');
+      const delayed = await delayResponse(page, '**/api/slide/page-1/annotate', 'POST');
+      try {
+        await page.locator('#btn-add-annotation').click();
+        assert.equal(await delayed.seen, 200);
+        if (change === 'selection') await frame.locator('.identity-line').first().click();
+        await page.locator('#annotation-text').fill('尚未提交的新内容');
+        delayed.release(); await delayed.done;
+        await page.waitForFunction(() => document.querySelector('#annotations').textContent.includes('已提交的标注'));
+        const draft = await page.locator('#annotation-text').inputValue();
+        console.log(`same-page ${change}: input after original response=${JSON.stringify(draft)}`);
+        assert.equal(draft, '尚未提交的新内容');
+        await save(page);
+        assert.deepEqual((await scanAnnotations(input)).map((a) => a.annotation), ['已提交的标注']);
+      } finally { delayed.release(); }
+    });
+  });
+}
+
+for (const action of ['add', 'delete']) {
+  for (const fail of [false, true]) {
+    test(`save ${fail ? 'fails on' : 'waits for'} in-flight annotation ${action}`, { skip: !process.env.CHROME_PATH }, async () => {
+      await browserTest(`annotation-save-${action}-${fail ? 'failure' : 'success'}`, STANDARD, async ({ page, preview, input }) => {
+        let annotationRequests = 0;
+        let saveRequests = 0;
+        preview.server.on('request', (req) => {
+          if (req.url.startsWith('/api/slide/page-1/annotate') && req.method === (action === 'add' ? 'POST' : 'DELETE')) annotationRequests++;
+          if (req.url === '/api/save-all') saveRequests++;
+        });
+        const held = await holdRequest(page, action === 'add' ? '**/api/slide/page-1/annotate' : '**/api/slide/page-1/annotate/*', action === 'add' ? 'POST' : 'DELETE', fail);
+        try {
+          if (action === 'add') {
+            const frame = await waitPage(page, 1);
+            await frame.locator('h1').first().click();
+            await page.locator('#annotation-text').fill('等待保存的标注');
+            await page.locator('#btn-add-annotation').click();
+          } else {
+            await page.locator('.annotation-item').filter({ hasText: '待删除的标注' }).locator('.ann-remove').click();
+          }
+          await held.seen;
+          assert.equal(annotationRequests, 0, 'annotation request must be held before reaching the backend');
+          await page.locator('#btn-save').click();
+          await page.locator('#modal-confirm').click();
+          await page.waitForTimeout(500);
+          const beforeRelease = (await scanAnnotations(input)).map((a) => a.annotation);
+          console.log(`${action} ${fail ? 'failure' : 'success'} before release: annotationRequests=${annotationRequests}; saveRequests=${saveRequests}; html=${JSON.stringify(beforeRelease)}; modal=${JSON.stringify(await page.locator('#modal-message').textContent())}`);
+          assert.equal(annotationRequests, 0);
+          assert.equal(saveRequests, 0, 'save-all must not reach the backend before the annotation request');
+
+          const response = page.waitForResponse((res) => res.url().includes('/api/slide/page-1/annotate') && res.request().method() === (action === 'add' ? 'POST' : 'DELETE'));
+          held.release(); await held.done;
+          assert.equal((await response).status(), fail ? 409 : 200);
+          assert.equal(annotationRequests, 1);
+          if (fail) {
+            await page.waitForFunction(() => document.querySelector('#modal-message').textContent.includes('保存失败'));
+            assert.equal(saveRequests, 0);
+            assert.ok((await readFile(path.join(preview.runtime, 'draft.json'), 'utf8')).includes('保留的原有草稿'));
+            assert.deepEqual((await scanAnnotations(input)).map((a) => a.annotation), action === 'add' ? [] : ['待删除的标注']);
+            console.log(`${action} failure: server returned 409; draft preserved; saveRequests=${saveRequests}`);
+          } else {
+            await page.waitForFunction(() => document.querySelector('#modal-message').textContent.includes('标注已保存到 HTML'));
+            assert.equal(saveRequests, 1);
+            assert.deepEqual((await scanAnnotations(input)).map((a) => a.annotation), action === 'add' ? ['等待保存的标注'] : []);
+            console.log(`${action} success: annotation reached backend before save; saved annotations verified`);
+          }
+        } finally { held.release(); }
+      }, async ({ preview }) => {
+        let data = await api(preview, '/api/slide/page-1');
+        let doc = readDocument(data.content);
+        if (action === 'delete') {
+          const id = doc.elements.find((node) => node.tagName === 'h1').editId;
+          await api(preview, '/api/slide/page-1/annotate', { element_id: id, annotation: '待删除的标注', base_digest: data.base_digest });
+          await api(preview, '/api/save-all', {});
+          data = await api(preview, '/api/slide/page-1');
+          doc = readDocument(data.content);
+        }
+        if (fail) {
+          const id = doc.elements.find((node) => node.tagName === 'h2').editId;
+          await api(preview, '/api/slide/page-1/annotate', { element_id: id, annotation: '保留的原有草稿', base_digest: data.base_digest });
+        }
+      });
+    });
+  }
+}
 
 test('delayed annotation deletion tracks its original page and saves the deletion', { skip: !process.env.CHROME_PATH }, async () => {
   await browserTest('annotation-delete', DENSE, async ({ page, input }) => {

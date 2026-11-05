@@ -453,6 +453,10 @@
     var matrixEditSlides  = {};     // {name: true} when a staged edit wrote transform=matrix(...)
     var annotationsDirty  = false;  // unsaved annotations added/removed this session
     var annotationEditSlides = {};  // {name: true} when annotations changed this session
+    var annotationDraftRevision = 0;
+    var inFlightChanges = new Set();
+
+    annotationText.addEventListener("input", function () { annotationDraftRevision++; });
 
     function pendingDirectEditCount() {
         return Object.keys(editStackCount).reduce(function (total, name) {
@@ -528,6 +532,7 @@
             btn.className = "annotation-quick-chip";
             btn.textContent = t(action.key);
             btn.addEventListener("click", function () {
+                var previous = annotationText.value;
                 var label = t(action.key);
                 var prefix = (LANG === "zh" || LANG === "zh-TW" || LANG === "ja") ? label + "：" : label + ": ";
                 if (!annotationText.value.trim()) {
@@ -535,6 +540,7 @@
                 } else if (annotationText.value.indexOf(prefix) === -1) {
                     annotationText.value = prefix + annotationText.value;
                 }
+                if (annotationText.value !== previous) annotationDraftRevision++;
                 annotationText.focus();
                 annotationText.selectionStart = annotationText.selectionEnd = annotationText.value.length;
             });
@@ -815,6 +821,7 @@
     function selectElement(elem, addToSelection) {
         var eid = elem.id;
         if (!eid) return;
+        annotationDraftRevision++;
 
         if (addToSelection) {
             // Ctrl+click: toggle this element
@@ -845,6 +852,7 @@
     //  5.  clearSelection
     // ================================================================
     function clearSelection() {
+        annotationDraftRevision++;
         selectedElementIds.forEach(function (id) {
             var el = canvasDocument().querySelector("#" + CSS.escape(id));
             if (el) el.classList.remove("svg-selected");
@@ -900,11 +908,13 @@
     btnAddAnnotation.addEventListener("click", function () {
         if (!currentSlide || selectedElementIds.size === 0) return;
 
-        var text = annotationText.value.trim();
+        var draft = annotationText.value;
+        var text = draft.trim();
         if (!text) return;
 
         var slide = currentSlide;
         var ids = Array.from(selectedElementIds);
+        var revision = annotationDraftRevision;
         var promises = ids.map(function (eid) {
             return fetch("/api/slide/" + encodeURIComponent(slide) + "/annotate", {
                 method: "POST",
@@ -913,7 +923,11 @@
             }).then(jsonOrThrow);
         });
 
-        Promise.all(promises)
+        var request = Promise.allSettled(promises)
+            .then(function (results) {
+                var failed = results.find(function (result) { return result.status === "rejected"; });
+                if (failed) throw failed.reason;
+            })
             .then(function () {
                 ids.forEach(function (eid) {
                     annotationsBySlide[slide][eid] = text;
@@ -922,14 +936,17 @@
                 if (slide === currentSlide) {
                     refreshAnnotationVisuals();
                     updateAnnotationList();
-                    annotationText.value = "";
+                    if (revision === annotationDraftRevision && annotationText.value === draft) {
+                        annotationText.value = "";
+                    }
                 }
                 loadSlides();
-            })
-            .catch(function (err) {
-                console.error("addAnnotation:", err);
-                showError(t("err_add_annotation") + err.message);
             });
+        trackChange(request);
+        request.catch(function (err) {
+            console.error("addAnnotation:", err);
+            showError(t("err_add_annotation") + err.message);
+        });
     });
 
     // ================================================================
@@ -939,7 +956,7 @@
         if (!currentSlide) return;
 
         var slide = currentSlide;
-        fetch("/api/slide/" + encodeURIComponent(slide) + "/annotate/" + encodeURIComponent(elementId), {
+        var request = fetch("/api/slide/" + encodeURIComponent(slide) + "/annotate/" + encodeURIComponent(elementId), {
             method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base_digest: sourceDigest })
         })
             .then(jsonOrThrow)
@@ -951,11 +968,18 @@
                     updateAnnotationList();
                 }
                 loadSlides();
-            })
-            .catch(function (err) {
-                console.error("removeAnnotation:", err);
-                showError(t("err_remove_annotation") + err.message);
             });
+        trackChange(request);
+        request.catch(function (err) {
+            console.error("removeAnnotation:", err);
+            showError(t("err_remove_annotation") + err.message);
+        });
+    }
+
+    function trackChange(request) {
+        inFlightChanges.add(request);
+        var done = function () { inFlightChanges.delete(request); };
+        request.then(done, done);
     }
 
     // ================================================================
@@ -1073,15 +1097,18 @@
         }
 
         // Step 2: save annotations. Service lifetime is controlled only by Exit preview.
-        var hadDirectEdits = pendingDirectEditCount() > 0;
-        var hadAnnotationChanges = pendingAnnotationChangeCount() > 0;
+        var hadDirectEdits;
+        var hadAnnotationChanges;
         modalConfirm.style.display = "none";
         modalCancel.style.display = "none";
 
-        // Wait for any just-fired direct edits (drag/nudge) to land first, or
-        // save-all could race ahead and leave their edits as a fresh pending set.
-        drainDirectEdits()
-            .then(function () { return fetch("/api/save-all", { method: "POST" }); })
+        // Wait for just-fired edits and annotations before saving the draft.
+        drainChanges()
+            .then(function () {
+                hadDirectEdits = pendingDirectEditCount() > 0;
+                hadAnnotationChanges = pendingAnnotationChangeCount() > 0;
+                return fetch("/api/save-all", { method: "POST" });
+            })
             .then(function (res) { return res.json(); })
             .then(function (data) {
                 if (data.error) {
@@ -1341,14 +1368,12 @@
     function attachPropEditors(element) { attachEditors([element]); }
     function attachMultiSelectionEditors() { attachEditors(selectedTopLevel()); }
 
-    var inFlightEdits = new Set();
-
-    function drainDirectEdits() {
-        if (inFlightEdits.size === 0) return Promise.resolve();
-        return Promise.allSettled(Array.from(inFlightEdits)).then(function (results) {
+    function drainChanges() {
+        if (inFlightChanges.size === 0) return Promise.resolve();
+        return Promise.allSettled(Array.from(inFlightChanges)).then(function (results) {
             var failed = results.find(function (r) { return r.status === "rejected"; });
-            if (failed) throw (failed.reason || new Error("direct edit failed"));
-            return drainDirectEdits();
+            if (failed) throw failed.reason;
+            return drainChanges();
         });
     }
 
@@ -1376,9 +1401,7 @@
             maybeShowSavedHint();
             return data;
         });
-        inFlightEdits.add(p);
-        var done = function () { inFlightEdits.delete(p); };
-        p.then(done, done);
+        trackChange(p);
         return p;
     }
 
