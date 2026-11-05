@@ -1,4 +1,5 @@
 node_modules/
+live_preview/
 tmp/
 export/*
 !export/vibe-resume-demo.pdf

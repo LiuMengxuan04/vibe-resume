@@ -37,6 +37,7 @@ VibeResume 的思路是：**把网页作为简历源文件，把 AI 当作编辑
 
 - **像 vibe coding 一样编辑简历**：直接告诉 AI 目标岗位、修改方向和版式要求，让它修改 `index.html` 与 `styles.css`。
 - **网页即源文件**：简历内容、布局、图标、链接都在静态 HTML/CSS 中维护，天然适合 Git 版本管理。
+- **实时预览与可视化修改**：沿用 PPT Master 的三栏编辑、暂存、撤销和标注交接流程，适配 HTML 简历。
 - **一键导出 PDF**：使用 Chromium 渲染网页的 `screen` 布局；一页模板动态测量 `.page` 高度，双页模板识别 `.resume-page` 并按页导出。
 - **分类模板**：`templates/internship-employment/` 提供两种实习就业模板，`templates/research-application/` 提供科研申请模板。
 - **避免打印错位**：不依赖手动浏览器打印，不触发不可控的纸张边距、分页、缩放和 `@media print` 差异。
@@ -60,10 +61,14 @@ npm install
 npm run preview
 ```
 
-然后访问：
+命令会打开实时预览编辑器，并打印实际地址。默认使用 `http://127.0.0.1:4173`，端口占用时顺延。默认编辑分类目录中的标准单页模板，与 `npm run export:pdf` 使用同一源文件。
 
-```text
-http://localhost:4173
+预览其他模板或根目录兼容文件：
+
+```bash
+npm run preview -- templates/internship-employment/dense-two-page/index.html
+npm run preview -- templates/research-application/research-classic/index.html
+npm run preview -- index.html
 ```
 
 导出 PDF：
@@ -182,6 +187,39 @@ unset CHROME_PATH
 `CHROME_PATH` 只能选择浏览器，不能绕过系统沙箱。
 
 ## 像 Vibe Coding 一样编辑简历
+
+### 实时预览与可视化修改
+
+这项功能移植自 [PPT Master](https://github.com/hugohe3/ppt-master) 的实时预览编辑器，保留三栏界面、元素选择、标注、暂存后应用、撤销和草稿恢复；SVG 画布改为按简历导出宽度渲染的 HTML 画布。移植来源与许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+1. 运行 `npm run preview`。AI 修改 HTML 或关联 CSS 后，页面会在下一轮轮询时刷新；存在未应用修改时会提示重新加载，避免覆盖你的操作。
+2. **直接修改**：点击元素，在右栏改文字、颜色、字体、字号或尺寸；再次按住选中的元素可拖动，方向键微调，`Shift` + 方向键移动 10px。`Ctrl` / `Cmd` + 点击可多选，`Alt` + 点击或“选择父级组”选父元素，右键可选择重叠元素。`Ctrl+Z` 或“撤销”撤回暂存的直接修改。
+3. **交给 AI 修改**：选中元素，输入要求，点“添加标注”，再点“应用修改”。回到聊天说“应用标注”；AI 读取标记并修改对应区域。
+4. **保存与导出分开**：“应用修改”只写回当前 HTML。直接样式作为该元素的内联 CSS 保存，不改同类元素；含链接、强调或图标的区域不会被文字编辑器整体抹平，需选择内部文字或写标注。更新 PDF 仍使用现有官方导出脚本。
+
+下面是使用虚构示例简历的实际操作截图（点击图片可查看原图）。
+
+**直接编辑与暂存**：选中文字后，在右栏修改内容和颜色，画布同步显示结果；可撤销暂存修改，确认后点击“应用修改”写回 HTML。
+
+![实时预览中直接编辑文字和颜色，右栏显示暂存状态与撤销按钮](docs/images/live-preview-direct-edit.png)
+
+**多选与标注交接**：选中多个元素，写下修改要求，依次点击“添加标注”和“应用修改”，再回到聊天要求 AI 应用标注。网页不会自动调用 AI，“应用修改”也不会导出 PDF。
+
+![实时预览中多选两个元素，并填写交给 AI 的修改说明](docs/images/live-preview-multi-annotation.png)
+
+AI 读取待处理标注：
+
+```bash
+npm run check:annotations
+# 指定与预览相同的 HTML：
+npm run check:annotations -- templates/internship-employment/dense-two-page/index.html
+```
+
+标注保存为 HTML 元素上的 `data-edit-target` / `data-edit-annotation`，与 PPT Master 使用同样的交接方式。网页不会直接调用模型；需要在聊天中要求 AI 应用标注并重新导出 PDF。
+
+未应用操作自动保存到 `live_preview/<模板标识>/draft.json`。退出后重开同一模板可以恢复；如果 HTML 已被其他程序修改，编辑器会拒绝写入，重启后把旧草稿留在 `draft_conflict_*.json`，避免改错元素。此目录被 Git 忽略。
+
+Agent 可用 `node scripts/live-preview/server.mjs <模板HTML> --daemon` 在后台启动；`--no-browser` 仅打印地址；`--shutdown` 关闭同一模板的预览。已有服务会复用。仅绑定本机回环地址，不需要 Python、Flask 或模型 API Key。
 
 推荐工作流：
 
@@ -367,6 +405,13 @@ npm run export:pdf:internship-standard
 npm run export:pdf:dense-two-page
 npm run export:pdf:research-classic
 ```
+
+`npm run preview` opens the live HTML editor, adapted from PPT Master's preview
+workflow. Select an element to edit text/styles or drag it; stage an AI instruction
+with **Add annotation**, then click **Apply changes**. Return to the agent chat and
+ask it to apply annotations and re-export the PDF. Saving never runs the exporter
+or calls a model. `npm run check:annotations -- <template.html>` lists pending
+instructions. Pass a template HTML path to `npm run preview -- <template.html>`.
 
 Default PDF output:
 

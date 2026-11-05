@@ -25,7 +25,8 @@
     "ai-resume"
   ],
   "scripts": {
-    "preview": "python3 -m http.server 4173",
+    "preview": "node scripts/live-preview/server.mjs",
+    "check:annotations": "node scripts/check-annotations.mjs",
     "test": "node --test",
     "sync:logos": "node scripts/sync-lobe-icons.mjs",
     "export:pdf": "node scripts/export-pdf.mjs export/vibe-resume-demo.pdf templates/internship-employment/standard-one-page/index.html",
@@ -38,6 +39,8 @@
   },
   "dependencies": {
     "@lobehub/icons": "^5.16.0",
-    "playwright-core": "^1.60.0"
+    "parse5": "^7.3.0",
+    "playwright-core": "^1.60.0",
+    "proper-lockfile": "^4.1.2"
   }
 }

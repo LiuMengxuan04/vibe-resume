@@ -25,7 +25,7 @@ Template sources:
 - The research template intentionally exports as a continuous long page. Do not force it into A4 unless the user explicitly requires A4.
 - Prefer concise, formal resume wording with strong verbs, concrete scope, and measurable outcomes.
 - Keep the selected template's semantic HTML structure unless a section truly needs to be added or removed.
-- Keep visual edits scoped to `styles.css`, and preserve the screen-to-PDF export mechanism.
+- Keep AI-authored visual edits scoped to `styles.css`, and preserve the screen-to-PDF export mechanism. The live preview's direct per-element edits intentionally use inline CSS; preserve them unless the user requests a conflicting change.
 - Treat company/project logos as optional. Use SVG/vector icons when useful, but keep text-only names when no suitable asset is available.
 - When a company logo is needed, proactively ask the user to manually search and download an SVG from `https://www.iconfont.cn/`, verify that it is the intended company mark, and attach it for the Agent to copy into `assets/logos/`. An official company brand/media library is also preferred. For AI model/product/provider icons, read `https://lobehub.com/icons/skill.md`, inspect `@lobehub/icons` `toc`, and use `getLobeIconCDN`. Production resumes must reference local files and never hotlink.
 
@@ -52,12 +52,47 @@ For personal-resume mode:
 1. Inspect `README.md`, `scripts/export-pdf.mjs`, and the HTML/CSS pair for the selected template.
 2. Identify whether the task is demo/template maintenance or a real personal resume.
 3. Select `templates/internship-employment/standard-one-page/`, `templates/internship-employment/dense-two-page/`, or `templates/research-application/research-classic/` using the rules above.
+   Before authoring, start `node scripts/live-preview/server.mjs <selected-html> --daemon` and report the actual URL. Reuse a running preview for that HTML. The editor watches the selected HTML and its linked CSS; do not open a different template from the one being edited or exported.
 4. Update resume content in the selected HTML file.
 5. Adjust spacing, width, typography, density, and page balance in the selected CSS file only when needed.
 6. For company logos, ask the user to manually download the intended SVG from `https://www.iconfont.cn/` (or an official brand library) and attach it; then copy it into `assets/logos/`. For AI/model/provider marks, follow `https://lobehub.com/icons/skill.md`: inspect `toc`, select a supported variant, use `getLobeIconCDN`, and store it locally. Do not guess slugs or substitute a product logo for a company logo without explicit user approval.
 7. Keep links, email, phone, and visible labels consistent.
 8. Run the PDF export.
 9. Verify the PDF has the requested page count and contains all major sections.
+
+## Live Preview And Submitted Annotations
+
+The live editor follows PPT Master's workflow: direct edits and annotations are
+staged, **Apply changes** writes the selected HTML, and the user returns to chat
+to request AI interpretation or PDF re-export. The browser never invokes a model
+or the exporter. Unlike PPTX generation, resume annotations do not need an initial
+PDF export before they can be applied.
+
+When the user says “应用标注”, “apply my annotations”, or quotes the editor's saved
+message:
+
+1. Run `node scripts/check-annotations.mjs <selected-html>`. Read the output as the
+   to-do list: HTML path, page, element id, instruction and content preview. Stop
+   with a concise explanation if none are present.
+2. Edit the targeted element or its containing region in that HTML/CSS. Preserve
+   nested links, emphasis, icons and the user's unrelated direct edits. Handle
+   markup changes in source; the direct text inspector intentionally edits only
+   leaf elements. Do not modify the root compatibility copy when the active source
+   is a categorized template.
+3. Remove `data-edit-target` and `data-edit-annotation` from each completed target;
+   leave unfulfilled instructions marked. Append an `annotation_applied` JSONL
+   record (`ts`, `file`, `element_id`, original instruction) to
+   the history file reported by the annotation checker under
+   `live_preview/<template-id>/annotations.jsonl`.
+4. Re-export the same HTML through `node scripts/export-pdf.mjs <output> <selected-html>`
+   and perform the existing PDF checks. Keep the preview running; it reloads after
+   source changes when no browser edits are pending.
+
+If source edits conflict with an unapplied browser draft, do not bypass the
+digest check or overwrite the draft. Ask the user to apply or discard their
+browser changes, or restart the preview to preserve the conflicting draft. Stop
+the preview only when requested; `node scripts/live-preview/server.mjs
+<selected-html> --shutdown` closes that template's service.
 
 ## Export And Validation
 
