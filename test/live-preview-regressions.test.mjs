@@ -393,3 +393,131 @@ test('temporary source rewrite shows waiting and recovers when the file returns'
     await page.locator('#svg-content').waitFor({ state: 'visible' });
   });
 });
+
+async function captureRegression(page, name) {
+  if (process.env.PR5_ARTIFACTS) await page.screenshot({ path: path.join(ARTIFACTS, `${name}.png`) });
+}
+
+for (const fail of [false, true]) {
+  test(`apply ${fail ? 'rejects failed' : 'waits for'} pending undo`, { skip: !process.env.CHROME_PATH }, async () => {
+    await browserTest(`undo-save-${fail}`, STANDARD, async ({ page, preview, input }) => {
+      const original = await readFile(input, 'utf8');
+      const frame = await waitPage(page, 1);
+      await frame.locator('h1').click();
+      await page.locator('.prop-edit-content').fill('Undo before saving');
+      await page.locator('.prop-edit-content').press('Tab');
+      await page.waitForFunction(() => document.querySelector('#btn-undo').textContent.includes('(1)'));
+      let release, arrived;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const seen = new Promise((resolve) => { arrived = resolve; });
+      let saves = 0;
+      preview.server.on('request', (req) => { if (req.url === '/api/save-all') saves++; });
+      await page.route('**/undo', async (route) => {
+        arrived(); await gate;
+        if (fail) await route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"undo unavailable"}' });
+        else await route.continue();
+      });
+      try {
+        await page.locator('#btn-undo').click(); await seen;
+        await page.locator('#btn-save').click(); await page.locator('#modal-confirm').click();
+        await page.waitForTimeout(150);
+        assert.equal(saves, 0);
+        assert.equal(await readFile(input, 'utf8'), original);
+        release();
+        await page.waitForFunction((failed) => document.querySelector('#modal-message').textContent.includes(failed ? '保存失败' : '已保存'), fail);
+        assert.equal(saves, fail ? 0 : 1);
+        assert.equal(await readFile(input, 'utf8'), original);
+        const pending = (await api(preview, '/api/config')).draft.pending;
+        assert.equal(pending['page-1']?.edits || 0, fail ? 1 : 0);
+        await captureRegression(page, `undo-before-save-${fail ? 'failure' : 'success'}`);
+      } finally { release(); }
+    });
+  });
+}
+
+test('saving keeps the editor locked until its response and refresh finish', { skip: !process.env.CHROME_PATH }, async () => {
+  await browserTest('save-modal-lock', STANDARD, async ({ page, input }) => {
+    const held = await delayResponse(page, '**/api/save-all', 'POST');
+    try {
+      await page.locator('#btn-save').click(); await page.locator('#modal-confirm').click();
+      await held.seen;
+      await page.locator('#modal-overlay').click({ position: { x: 10, y: 10 } });
+      assert.equal(await page.locator('#modal-overlay').isVisible(), true);
+      assert.equal(await page.locator('#app').evaluate((el) => el.inert), true);
+      await captureRegression(page, 'save-modal-locked');
+      held.release(); await held.done;
+      await page.waitForFunction(() => !document.querySelector('#app').inert);
+      await page.locator('#modal-overlay').click({ position: { x: 10, y: 10 } });
+      const frame = await waitPage(page, 1);
+      await frame.locator('h1').click();
+      await page.locator('#annotation-text').fill('New change after save');
+      await page.locator('#btn-add-annotation').click();
+      await page.waitForFunction(() => document.querySelector('#pending-status').textContent.includes('page-1'));
+      assert.equal((await scanAnnotations(input)).length, 0);
+      await save(page);
+      assert.equal((await scanAnnotations(input))[0].annotation, 'New change after save');
+    } finally { held.release(); }
+  });
+});
+
+for (const fail of [false, true]) {
+  test(`exit ${fail ? 'keeps the server running on a failed' : 'persists a pending'} annotation`, { skip: !process.env.CHROME_PATH }, async () => {
+    await browserTest(`exit-annotation-${fail}`, STANDARD, async ({ page, preview, root, input }) => {
+      const frame = await waitPage(page, 1);
+      await frame.locator('h1').click();
+      await page.locator('#annotation-text').fill('退出前提交的批注');
+      const held = await holdRequest(page, '**/annotate', 'POST', fail);
+      let shutdowns = 0;
+      preview.server.on('request', (req) => { if (req.url === '/api/shutdown') shutdowns++; });
+      try {
+        await page.locator('#btn-add-annotation').click(); await held.seen;
+        await page.locator('#btn-exit-preview').click(); await page.locator('#modal-confirm').click();
+        await page.locator('#modal-overlay').click({ position: { x: 10, y: 10 } });
+        assert.equal(await page.locator('#modal-overlay').isVisible(), true);
+        assert.equal(shutdowns, 0);
+        held.release(); await held.done;
+        await page.waitForFunction((failed) => document.querySelector('#modal-message').textContent.includes(failed ? '无法停止预览' : '预览已停止'), fail);
+        await captureRegression(page, `exit-annotation-${fail ? 'failure' : 'success'}`);
+        assert.equal(shutdowns, fail ? 0 : 1);
+        if (fail) {
+          assert.equal((await api(preview, '/api/config')).live, true);
+          assert.equal(await page.locator('#annotation-text').inputValue(), '退出前提交的批注');
+          assert.equal(await page.locator('#modal-confirm').isVisible(), true);
+        } else {
+          assert.ok((await readFile(path.join(preview.runtime, 'draft.json'), 'utf8')).includes('退出前提交的批注'));
+          await stop(preview);
+          const reopened = await createPreview({ root, input, port: fixturePort++, timeout: 0 });
+          try {
+            page.on('dialog', (dialog) => dialog.accept());
+            await page.goto(reopened.url); await waitPage(page, 1);
+            assert.match(await page.locator('#annotations').textContent(), /退出前提交的批注/);
+            await save(page);
+            assert.equal((await scanAnnotations(input))[0].annotation, '退出前提交的批注');
+            await captureRegression(page, 'exit-draft-restored-and-applied');
+          } finally { await stop(reopened); }
+        }
+      } finally { held.release(); }
+    });
+  });
+}
+
+for (const failure of ['http', 'network']) {
+  test(`failed shutdown (${failure}) shows an error and permits retry`, { skip: !process.env.CHROME_PATH }, async () => {
+    await browserTest(`shutdown-${failure}`, STANDARD, async ({ page, preview }) => {
+      let attempts = 0;
+      await page.route('**/api/shutdown', async (route) => {
+        if (++attempts > 1) return route.continue();
+        if (failure === 'network') return route.abort('failed');
+        return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"shutdown unavailable"}' });
+      });
+      await page.locator('#btn-exit-preview').click(); await page.locator('#modal-confirm').click();
+      await page.waitForFunction(() => document.querySelector('#modal-message').textContent.includes('无法停止预览'));
+      assert.equal((await api(preview, '/api/config')).live, true);
+      assert.equal(await page.locator('#modal-confirm').isVisible(), true);
+      await captureRegression(page, `shutdown-${failure}-retry`);
+      await page.locator('#modal-confirm').click();
+      await page.waitForFunction(() => document.querySelector('#modal-message').textContent.includes('预览已停止'));
+      assert.equal(attempts, 2);
+    });
+  });
+}

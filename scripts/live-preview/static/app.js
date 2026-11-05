@@ -54,6 +54,7 @@
             err_add_annotation: "Failed to add annotation: ",
             err_remove_annotation: "Failed to remove annotation: ",
             err_save: "Save failed: ",
+            err_exit: "Could not stop preview: ",
             err_edit: "Edit failed: ",
             label_direct_edit: "Object attributes (pending until Apply changes)",
             prop_multiline_hint: "Contains nested markup. Select a text element, or annotate the whole region for AI.",
@@ -134,6 +135,7 @@
             err_add_annotation: "コメントの追加に失敗しました：",
             err_remove_annotation: "コメントの削除に失敗しました：",
             err_save: "保存に失敗しました：",
+            err_exit: "プレビューを停止できませんでした: ",
             err_edit: "編集に失敗しました：",
             label_direct_edit: "オブジェクト属性（「変更を適用」までは保留）",
             prop_multiline_hint: "子要素を含みます。テキスト要素を選択するか、AIへのコメントを追加してください。",
@@ -214,6 +216,7 @@
             err_add_annotation: "添加标注失败：",
             err_remove_annotation: "删除标注失败：",
             err_save: "保存失败：",
+            err_exit: "无法停止预览：",
             err_edit: "编辑失败：",
             label_direct_edit: "对象属性（点击“应用修改”后写入）",
             prop_multiline_hint: "包含嵌套内容，请选择具体文字元素，或标注整个区域让 AI 修改",
@@ -294,6 +297,7 @@
             err_add_annotation: "新增標註失敗：",
             err_remove_annotation: "刪除標註失敗：",
             err_save: "儲存失敗：",
+            err_exit: "無法停止預覽：",
             err_edit: "編輯失敗：",
             label_direct_edit: "物件屬性（點選套用修改後寫入）",
             prop_multiline_hint: "包含巢狀內容，請選擇具體文字元素，或標註整個區域讓 AI 修改",
@@ -445,6 +449,7 @@
     var liveMode          = false;
     var slidePollTimer    = null;
     var pendingModalAction = "submit";
+    var modalBusy = false;
     var slideMtimes       = {};     // {name: mtime} — last-seen mtime for each slide
     var reloadBannerEl    = null;   // singleton banner element shown when currentSlide mtime drifts
     var editStackCount    = {};     // {name: staged edit count} — mirrors backend PENDING_EDITS
@@ -1077,22 +1082,36 @@
         modalOverlay.style.display = "flex";
     });
 
+    function setModalBusy(busy) {
+        modalBusy = busy;
+        document.getElementById("app").inert = busy;
+    }
+
     modalConfirm.addEventListener("click", function () {
+        if (modalBusy) return;
+        setModalBusy(true);
         if (pendingModalAction === "exit") {
             modalConfirm.style.display = "none";
             modalCancel.style.display = "none";
             modalMessage.textContent = t("modal_stopping");
-            fetch("/api/shutdown", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reason: "exit-preview" })
-            })
+            drainChanges()
+                .then(function () {
+                    return fetch("/api/shutdown", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ reason: "exit-preview" })
+                    });
+                })
+                .then(jsonOrThrow)
                 .then(function () {
                     modalMessage.textContent = t("modal_success_exit");
                 })
-                .catch(function () {
-                    modalMessage.textContent = t("modal_success_exit");
-                });
+                .catch(function (err) {
+                    modalMessage.textContent = t("err_exit") + err.message;
+                    modalConfirm.style.display = "";
+                    modalCancel.style.display = "";
+                })
+                .finally(function () { setModalBusy(false); });
             return;
         }
 
@@ -1136,10 +1155,10 @@
                     updateUndoButton();
                     updatePendingStatus();
                     var activeSlide = currentSlide;
-                    loadSlides().then(function () {
+                    return loadSlides().then(function () {
                         if (activeSlide) {
                             var item = slideListEl.querySelector('.slide-item[data-name="' + cssAttr(activeSlide) + '"]');
-                            selectSlide(activeSlide, item || undefined);
+                            return selectSlide(activeSlide, item || undefined);
                         }
                     });
                 }
@@ -1148,17 +1167,19 @@
                 modalMessage.textContent = t("err_save") + err;
                 modalConfirm.style.display = "";
                 modalCancel.style.display = "";
-            });
+            })
+            .finally(function () { setModalBusy(false); });
     });
 
     modalCancel.addEventListener("click", function () {
+        if (modalBusy) return;
         modalConfirm.textContent = t("modal_submit");
         modalOverlay.style.display = "none";
     });
 
     // Close modal on overlay click
     modalOverlay.addEventListener("click", function (e) {
-            if (e.target === modalOverlay) {
+            if (e.target === modalOverlay && !modalBusy) {
                 modalConfirm.textContent = t("modal_submit");
                 modalOverlay.style.display = "none";
             }
@@ -1295,31 +1316,26 @@
     }
 
     function runUndo() {
-        if (!currentSlide || !editStackCount[currentSlide]) return;
-        fetch("/api/slide/" + encodeURIComponent(currentSlide) + "/undo", { method: "POST" })
+        if (modalBusy || !currentSlide || !editStackCount[currentSlide]) return;
+        var slide = currentSlide;
+        var request = fetch("/api/slide/" + encodeURIComponent(slide) + "/undo", { method: "POST" })
             .then(jsonOrThrow)
             .then(function (data) {
-                if (data.status === "empty") {
-                    editStackCount[currentSlide] = 0;
-                    matrixEditSlides[currentSlide] = false;
-                    updateUndoButton();
-                    updatePendingStatus();
-                    showWarning(t("undo_empty"));
-                    return;
-                }
-                if (data.mtime !== undefined && data.mtime !== null) {
-                    slideMtimes[currentSlide] = data.mtime;
-                }
-                // Reload the page so the canvas reflects the reverted HTML;
-                // selectSlide refreshes editStackCount + the undo button.
-                var item = slideListEl.querySelector('.slide-item[data-name="' + cssAttr(currentSlide) + '"]');
-                selectSlide(currentSlide, item || undefined);
+                editStackCount[slide] = data.undo_depth || 0;
+                if (!editStackCount[slide]) matrixEditSlides[slide] = false;
+                if (data.mtime !== undefined && data.mtime !== null) slideMtimes[slide] = data.mtime;
+                updateUndoButton();
                 updatePendingStatus();
-                showWarning(t("undo_done"));
-            })
-            .catch(function (err) {
-                showError(t("err_edit") + err.message);
+                showWarning(t(data.status === "empty" ? "undo_empty" : "undo_done"));
+                if (slide === currentSlide) {
+                    var item = slideListEl.querySelector('.slide-item[data-name="' + cssAttr(slide) + '"]');
+                    return selectSlide(slide, item || undefined);
+                }
             });
+        trackChange(request);
+        request.catch(function (err) {
+            showError(t("err_edit") + err.message);
+        });
     }
 
     function maybeShowSavedHint() {
