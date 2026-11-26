@@ -1,0 +1,33 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    env:
+      # Browser tests are skipped unless CHROME_PATH is set.
+      # GitHub's Ubuntu runners ship with Google Chrome at this path.
+      CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - name: Check Chrome
+        run: |
+          test -x "$CHROME_PATH" || { echo "Chrome not found at $CHROME_PATH"; exit 1; }
+          "$CHROME_PATH" --version
+      - run: npm test
