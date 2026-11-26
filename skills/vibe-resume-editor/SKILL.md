@@ -30,7 +30,7 @@ If the user later asks to see the page or select something on it, start the prev
 - Keep the resume credible and specific. Do not invent degrees, employers, dates, awards, metrics, or project claims when editing a real resume.
 - Use `templates/internship-employment/standard-one-page/` by default when the user does not specify length.
 - When the user explicitly asks for two pages, a dense resume, or has substantial technical experience that clearly needs two pages, default to `templates/internship-employment/dense-two-page/`.
-- When the user asks for an English resume (for example a foreign company, an overseas internship, or a study-abroad application) and does not need two pages or a research layout, use `templates/internship-employment/english-one-page/`. It omits the photo by default, following common English resume conventions.
+- When the user asks for an English resume (for example a foreign company, an overseas internship, or a study-abroad application) and does not need two pages or a research layout, use `templates/internship-employment/english-one-page/`. This takes precedence over the length default above. It omits the photo by default, following common English resume conventions.
 - When the user is applying for a PhD, research internship, research assistant role, or needs to foreground publications and a representative research contribution, use `templates/research-application/research-classic/`.
 - The dense template is backward compatible: keep one `.resume-page` for a one-page version, or two `.resume-page` elements for a two-page version.
 - The research template intentionally exports as a continuous long page. Do not force it into A4 unless the user explicitly requires A4.

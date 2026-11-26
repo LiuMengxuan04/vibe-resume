@@ -40,7 +40,7 @@ VibeResume 的思路是：**把网页作为简历源文件，把 AI 当作编辑
 - **实时预览与可视化修改**：沿用 PPT Master 的三栏编辑、暂存、撤销和标注交接流程，适配 HTML 简历。
 - **快速生成**：说“快速生成”时，AI 按模板改完并导出 PDF，预览留到你要看页面时再开。
 - **一键导出 PDF**：使用 Chromium 渲染网页的 `screen` 布局；一页模板动态测量 `.page` 高度，双页模板识别 `.resume-page` 并按页导出。
-- **分类模板**：`templates/internship-employment/` 提供两种实习就业模板，`templates/research-application/` 提供科研申请模板。
+- **分类模板**：`templates/internship-employment/` 提供三种实习就业模板（含英文单页），`templates/research-application/` 提供科研申请模板。
 - **避免打印错位**：不依赖手动浏览器打印，不触发不可控的纸张边距、分页、缩放和 `@media print` 差异。
 - **AI 配套 Skill**：仓库内置 `vibe-resume-editor`，可以作为 Codex-style skill 即插即用。
 - **开源项目友好**：包含 README、License、示例 PDF、预览截图、导出脚本、依赖锁定和 mock 示例内容。
@@ -68,6 +68,7 @@ npm run preview
 
 ```bash
 npm run preview -- templates/internship-employment/dense-two-page/index.html
+npm run preview -- templates/internship-employment/english-one-page/index.html
 npm run preview -- templates/research-application/research-classic/index.html
 npm run preview -- index.html
 ```
@@ -94,6 +95,18 @@ npm run export:pdf:dense-two-page
 
 ```text
 export/vibe-resume-dense-two-page-demo.pdf
+```
+
+导出英文单页模板：
+
+```bash
+npm run export:pdf:english-one-page
+```
+
+输出：
+
+```text
+export/vibe-resume-english-one-page-demo.pdf
 ```
 
 导出实习就业标准单页模板（分类目录版本）：
