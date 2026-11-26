@@ -4,6 +4,7 @@ tmp/
 export/*
 !export/vibe-resume-demo.pdf
 !export/vibe-resume-dense-two-page-demo.pdf
+!export/vibe-resume-english-one-page-demo.pdf
 !export/vibe-resume-research-classic-demo.pdf
 __pycache__/
 *.pyc

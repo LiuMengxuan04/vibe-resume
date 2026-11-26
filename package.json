@@ -32,6 +32,7 @@
     "export:pdf": "node scripts/export-pdf.mjs export/vibe-resume-demo.pdf templates/internship-employment/standard-one-page/index.html",
     "export:pdf:internship-standard": "node scripts/export-pdf.mjs export/vibe-resume-demo.pdf templates/internship-employment/standard-one-page/index.html",
     "export:pdf:dense-two-page": "node scripts/export-pdf.mjs export/vibe-resume-dense-two-page-demo.pdf templates/internship-employment/dense-two-page/index.html",
+    "export:pdf:english-one-page": "node scripts/export-pdf.mjs export/vibe-resume-english-one-page-demo.pdf templates/internship-employment/english-one-page/index.html",
     "export:pdf:research-classic": "node scripts/export-pdf.mjs export/vibe-resume-research-classic-demo.pdf templates/research-application/research-classic/index.html"
   },
   "engines": {

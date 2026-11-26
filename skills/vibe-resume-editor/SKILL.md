@@ -13,6 +13,7 @@ Template sources:
 
 - Standard one-page template: `templates/internship-employment/standard-one-page/index.html` + `styles.css`
 - Dense one/two-page technical template: `templates/internship-employment/dense-two-page/index.html` + `templates/internship-employment/dense-two-page/styles.css`
+- English one-page template: `templates/internship-employment/english-one-page/index.html` + `templates/internship-employment/english-one-page/styles.css`
 - Research application template: `templates/research-application/research-classic/index.html` + `templates/research-application/research-classic/styles.css`
 
 ## Generation Mode
@@ -29,6 +30,7 @@ If the user later asks to see the page or select something on it, start the prev
 - Keep the resume credible and specific. Do not invent degrees, employers, dates, awards, metrics, or project claims when editing a real resume.
 - Use `templates/internship-employment/standard-one-page/` by default when the user does not specify length.
 - When the user explicitly asks for two pages, a dense resume, or has substantial technical experience that clearly needs two pages, default to `templates/internship-employment/dense-two-page/`.
+- When the user asks for an English resume (for example a foreign company, an overseas internship, or a study-abroad application) and does not need two pages or a research layout, use `templates/internship-employment/english-one-page/`. It omits the photo by default, following common English resume conventions.
 - When the user is applying for a PhD, research internship, research assistant role, or needs to foreground publications and a representative research contribution, use `templates/research-application/research-classic/`.
 - The dense template is backward compatible: keep one `.resume-page` for a one-page version, or two `.resume-page` elements for a two-page version.
 - The research template intentionally exports as a continuous long page. Do not force it into A4 unless the user explicitly requires A4.
@@ -60,7 +62,7 @@ For personal-resume mode:
 
 1. Inspect `README.md`, `scripts/export-pdf.mjs`, and the HTML/CSS pair for the selected template.
 2. Identify whether the task is demo/template maintenance or a real personal resume.
-3. Select `templates/internship-employment/standard-one-page/`, `templates/internship-employment/dense-two-page/`, or `templates/research-application/research-classic/` using the rules above.
+3. Select `templates/internship-employment/standard-one-page/`, `templates/internship-employment/dense-two-page/`, `templates/internship-employment/english-one-page/`, or `templates/research-application/research-classic/` using the rules above.
    In Default mode, before authoring, start `node scripts/live-preview/server.mjs <selected-html> --daemon` and report the actual URL. Reuse a running preview for that HTML. In Quick mode, skip this launch. The editor watches the selected HTML and its linked CSS; do not open a different template from the one being edited or exported.
 4. Update resume content in the selected HTML file.
 5. Adjust spacing, width, typography, density, and page balance in the selected CSS file only when needed.
@@ -124,6 +126,12 @@ For the dense two-page template:
 
 ```bash
 npm run export:pdf:dense-two-page
+```
+
+For the English one-page template:
+
+```bash
+npm run export:pdf:english-one-page
 ```
 
 For the research application template:

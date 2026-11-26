@@ -6,6 +6,7 @@ VibeResume 将可直接编辑的简历模板按投递场景分类。所有模板
 
 - [标准单页](./internship-employment/standard-one-page/README.md)：适合经历较少、强调快速扫描的默认投递版本。
 - [高密度技术双页](./internship-employment/dense-two-page/README.md)：适合项目、实习或开源经历较多的技术候选人。
+- [英文单页](./internship-employment/english-one-page/README.md)：适合外企、海外实习或留学申请等需要英文简历的投递。
 
 ## 科研申请
 

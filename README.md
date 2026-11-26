@@ -20,7 +20,7 @@ VibeResume 是一个 **AI 友好、网页优先、可导出 PDF 的简历模板�
 </p>
 
 - 示例网页：打开根目录 `index.html`，或进入下方模板目录
-- 示例 PDF：[实习就业标准单页](export/vibe-resume-demo.pdf) · [实习就业高密度双页](export/vibe-resume-dense-two-page-demo.pdf) · [科研申请](export/vibe-resume-research-classic-demo.pdf)
+- 示例 PDF：[实习就业标准单页](export/vibe-resume-demo.pdf) · [实习就业高密度双页](export/vibe-resume-dense-two-page-demo.pdf) · [英文单页](export/vibe-resume-english-one-page-demo.pdf) · [科研申请](export/vibe-resume-research-classic-demo.pdf)
 - AI 使用说明：[skills/vibe-resume-editor/SKILL.md](skills/vibe-resume-editor/SKILL.md)
 
 ## 为什么做这个项目
@@ -159,6 +159,15 @@ PDF 由无头 Chromium 导出。之后要改页面，打开同一份 HTML 的实
 - [预览](templates/internship-employment/dense-two-page/preview.png) · 导出：`npm run export:pdf:dense-two-page`
 
 当用户明确要求两页简历时，配套 Skill 会默认选择这个模板；没指定页数时用标准一页模板。
+
+#### English One-Page 英文单页模板
+
+- 文件：`templates/internship-employment/english-one-page/index.html` + `templates/internship-employment/english-one-page/styles.css`
+- 适合：外企、海外实习、留学申请等需要英文简历的投递。
+- 风格：沿用标准单页的版式；去掉证件照（英文简历通常不放照片），西文字体优先，日期右对齐，正文左对齐。
+- [预览](templates/internship-employment/english-one-page/preview.png) · 导出：`npm run export:pdf:english-one-page`
+
+当用户要求英文简历时，配套 Skill 会默认选择这个模板。
 
 ### 科研申请
 
@@ -348,6 +357,7 @@ VibeResume
 ├── export/
 │   ├── vibe-resume-demo.pdf
 │   ├── vibe-resume-dense-two-page-demo.pdf
+│   ├── vibe-resume-english-one-page-demo.pdf
 │   └── vibe-resume-research-classic-demo.pdf
 ├── skills/
 │   └── vibe-resume-editor/
@@ -358,7 +368,8 @@ VibeResume
 ├── templates/
 │   ├── internship-employment/
 │   │   ├── standard-one-page/
-│   │   └── dense-two-page/
+│   │   ├── dense-two-page/
+│   │   └── english-one-page/
 │   ├── research-application/
 │   │   └── research-classic/
 │   └── README.md
@@ -394,7 +405,7 @@ VibeResume 的灵感来源之一，是与 [he11x / kexin](https://github.com/he1
 
 ## English
 
-VibeResume is a vibe-coding friendly web-to-PDF resume template repository. It includes two internship and employment templates plus a research application template.
+VibeResume is a vibe-coding friendly web-to-PDF resume template repository. It includes three internship and employment templates (including an English one-page layout) plus a research application template.
 
 ### Highlights
 
@@ -402,7 +413,7 @@ VibeResume is a vibe-coding friendly web-to-PDF resume template repository. It i
 - **Web-first source**: content, layout, links, icons, and styling are all version-controlled as static files.
 - **Quick generation**: say "quick generation" and the AI edits the template and exports a PDF. The live preview opens when you ask to see the page.
 - **Stable PDF export**: Chromium renders the screen layout and exports either a measured continuous page or explicit `.resume-page` pages.
-- **Template categories**: `templates/internship-employment/` contains standard one-page and dense technical layouts; `templates/research-application/` contains the research application layout.
+- **Template categories**: `templates/internship-employment/` contains standard one-page, dense technical and English one-page layouts; `templates/research-application/` contains the research application layout.
 - **Print mismatch avoidance**: no manual browser print workflow, no unexpected print-media pagination.
 - **Codex-style skill included**: `skills/vibe-resume-editor/SKILL.md` gives agents project-specific editing and validation rules.
 - **Open-source ready**: MIT license, badges, preview screenshot, sample PDF, export script, and mock demo content.
@@ -417,6 +428,7 @@ npm run preview
 npm run export:pdf
 npm run export:pdf:internship-standard
 npm run export:pdf:dense-two-page
+npm run export:pdf:english-one-page
 npm run export:pdf:research-classic
 ```
 
